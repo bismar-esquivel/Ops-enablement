@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Campaigns collection - read-only for now, can be modified based on requirements
+    match /campaigns/{campaignId} {
+      allow read: if true;  // Allow reading campaigns
+      allow write: if false; // Disable direct writes - only through Cloud Functions
+    }
+    
+    // Health check collection
+    match /_health/{document} {
+      allow read, write: if false; // Only accessible through Cloud Functions
+    }
+    
+    // Default rule - deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
