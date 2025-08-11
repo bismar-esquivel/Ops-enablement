@@ -2,7 +2,8 @@ require("dotenv").config();
 
 const INSTANTLY_CONFIG = {
   API_KEY:
-    "MWU3YTg3NDMtNDQyNi00ODNmLWFkMjQtMjM0NDRkOTU0YzFkOk90VmlRRWxvV2Nmdw==",
+    "MWU3YTg3NDMtNDQyNi00ODNmLWFkMjQtMjM0NDRkOTU0YzFkOk5zb05uU2ZSbFFJZA==",
+  // "MWU3YTg3NDMtNDQyNi00ODNmLWFkMjQtMjM0NDRkOTU0YzFkOmZqcWtqS0xrVEFGSw==",
   BASE_URL:
     process.env.INSTANTLY_API_BASE_URL || "https://api.instantly.ai/api/v2",
   ENDPOINTS: {
@@ -12,7 +13,7 @@ const INSTANTLY_CONFIG = {
     CAMPAIGN_SUBSCRIBERS: "/campaigns/{id}/subscribers",
     CAMPAIGN_LEADS: "/campaigns/{id}/leads",
     CAMPAIGN_CONTACTS: "/campaigns/{id}/contacts",
-    LEAD_LIST: "/leads-lists",
+    LEAD_LIST: "/lead-lists",
   },
   RATE_LIMITS: {
     REQUESTS_PER_MINUTE: 60,
