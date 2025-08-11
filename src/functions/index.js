@@ -1,30 +1,10 @@
-/**
- * Firebase Cloud Functions para integración con Instantly API v2
- * Funcionalidades:
- * - Sincronización de campañas
- * - Extracción de métricas y detalles
- * - Gestión de rate limiting y autenticación
- */
-
 const { setGlobalOptions } = require("firebase-functions");
 const { onRequest } = require("firebase-functions/v2/https");
-const logger = require("firebase-functions/logger");
-const fetch = require("node-fetch");
-const admin = require("../config/firebase");
 
 // Importar servicios y modelos
 const InstantlyService = require("../services/InstantlyService");
-const Campaign = require("../models/Campaign");
-const Lead = require("../models/Lead");
 const { INSTANTLY_CONFIG } = require("../config/instantly");
-const {
-  LEAD_STATUS,
-  LEAD_INTEREST_STATUS,
-  LEAD_VERIFICATION_STATUS,
-  LEAD_ENRICHMENT_STATUS,
-  LEAD_ESP_CODE,
-  dbCollection,
-} = require("./constants");
+const { logger } = require("../utils/logger");
 
 // Configuración global para control de costos
 setGlobalOptions({
