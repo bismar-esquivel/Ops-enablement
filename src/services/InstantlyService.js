@@ -5,6 +5,7 @@ const {
   getHeaders,
 } = require("../config/instantly");
 const Campaign = require("../models/Campaign");
+const admin = require("../config/firebase");
 
 class InstantlyService {
   constructor() {
@@ -165,7 +166,9 @@ class InstantlyService {
       );
       const response = await this.retryRequest(() => this.api.get(endpoint));
 
-      console.log(`Retrieved details for campaign ${campaignId}`);
+      console.log(
+        `Retrieved details for campaign ${campaignId} ---- ${response.data}`
+      );
       return response.data;
     } catch (error) {
       console.error(
@@ -176,34 +179,12 @@ class InstantlyService {
     }
   }
 
-  // Get campaign metrics by ID
-  async getCampaignMetrics(campaignId) {
+  // Get campaign contacts by ID (alternative endpoint)
+  async getCampaignContacts(campaignId, page = 1, limit = 100) {
     try {
-      console.log(`Fetching metrics for campaign ${campaignId}`);
+      console.log(`Fetching contacts for campaign ${campaignId}`);
 
-      const endpoint = INSTANTLY_CONFIG.ENDPOINTS.CAMPAIGN_METRICS.replace(
-        "{id}",
-        campaignId
-      );
-      const response = await this.retryRequest(() => this.api.get(endpoint));
-
-      console.log(`Retrieved metrics for campaign ${campaignId}`);
-      return response.data;
-    } catch (error) {
-      console.error(
-        `Error fetching campaign ${campaignId} metrics:`,
-        error.message
-      );
-      throw error;
-    }
-  }
-
-  // Get campaign subscribers by ID
-  async getCampaignSubscribers(campaignId, page = 1, limit = 100) {
-    try {
-      console.log(`Fetching subscribers for campaign ${campaignId}`);
-
-      const endpoint = INSTANTLY_CONFIG.ENDPOINTS.CAMPAIGN_SUBSCRIBERS.replace(
+      const endpoint = INSTANTLY_CONFIG.ENDPOINTS.CAMPAIGN_CONTACTS.replace(
         "{id}",
         campaignId
       );
@@ -213,11 +194,11 @@ class InstantlyService {
         })
       );
 
-      console.log(`Retrieved subscribers for campaign ${campaignId}`);
+      console.log(`Retrieved contacts for campaign ${campaignId}`);
       return response.data;
     } catch (error) {
       console.error(
-        `Error fetching campaign ${campaignId} subscribers:`,
+        `Error fetching campaign ${campaignId} contacts:`,
         error.message
       );
       throw error;
@@ -277,19 +258,31 @@ class InstantlyService {
           break;
         }
 
+        console.log("campaigns >>>", campaigns.length);
+        console.log("campaigns >>>", campaigns[0]);
+
         // Process each campaign
+        const campaignsBatch = admin.firestore().batch();
         for (const campaignData of campaigns) {
           try {
             // Get additional details if available
             let fullCampaignData = campaignData;
 
+            const CAMPAIGN_STATUS = {
+              1: "Active",
+              2: "Paused",
+              3: "Completed",
+              4: "Running Subsequences",
+              "-99": "Account Suspended",
+              "-1": "Accounts Unhealthy",
+              "-2": "Bounce Protect",
+            };
+
             try {
               // const details = await this.getCampaignDetails(campaignData.id);
-              // const metrics = await this.getCampaignMetrics(campaignData.id);
               // fullCampaignData = {
               //   ...campaignData,
               //   ...details,
-              //   metrics: metrics.metrics || campaignData.metrics,
               // };
             } catch (detailError) {
               console.warn(
@@ -300,6 +293,13 @@ class InstantlyService {
 
             // Create and save campaign
             const campaign = new Campaign(fullCampaignData);
+            campaigns_batch.set(
+              admin.firestore().collection("campaigns").doc(campaign.id),
+              {
+                ...campaign,
+                status: CAMPAIGN_STATUS[campaignData.status],
+              }
+            );
             // await campaign.save();
             totalSynced++;
 
@@ -311,6 +311,7 @@ class InstantlyService {
             );
           }
         }
+        await campaignsBatch.commit();
 
         hasMore = result.hasMore;
         page++;
@@ -328,228 +329,6 @@ class InstantlyService {
     } catch (error) {
       console.error("Error during campaign synchronization:", error.message);
       throw error;
-    }
-  }
-
-  // Sync specific campaign by ID
-  async syncCampaignById(campaignId) {
-    try {
-      console.log(`Syncing campaign ${campaignId}...`);
-
-      const campaignData = await this.getCampaignDetails(campaignId);
-      const metrics = await this.getCampaignMetrics(campaignId);
-
-      const fullCampaignData = {
-        ...campaignData,
-        metrics: metrics.metrics || campaignData.metrics,
-      };
-
-      const campaign = new Campaign(fullCampaignData);
-      await campaign.save();
-
-      console.log(`Campaign ${campaignId} synced successfully`);
-      return campaign;
-    } catch (error) {
-      console.error(`Error syncing campaign ${campaignId}:`, error.message);
-      throw error;
-    }
-  }
-
-  // Test API connection
-  async testConnection() {
-    try {
-      console.log("Testing Instantly API connection...");
-
-      // Test basic connection first
-      const response = await this.api.get("/");
-      console.log("Basic API connection successful");
-
-      // Test campaigns endpoint to see response structure
-      try {
-        const campaignsResponse = await this.api.get(
-          INSTANTLY_CONFIG.ENDPOINTS.CAMPAIGNS,
-          {
-            params: { page: 1, limit: 1 },
-          }
-        );
-
-        console.log("Campaigns endpoint test successful");
-
-        // Log the response structure for debugging
-        const structure = {
-          hasData: !!campaignsResponse.data,
-          dataType: typeof campaignsResponse.data,
-          dataKeys: campaignsResponse.data
-            ? Object.keys(campaignsResponse.data)
-            : [],
-          isArray: Array.isArray(campaignsResponse.data),
-          sampleData: campaignsResponse.data
-            ? JSON.stringify(campaignsResponse.data).substring(0, 500) + "..."
-            : "null",
-        };
-
-        console.log("Campaigns API Response Structure:", structure);
-
-        return {
-          success: true,
-          status: response.status,
-          message: "Connection successful",
-          campaignsEndpoint: {
-            success: true,
-            structure: structure,
-            sampleData: campaignsResponse.data,
-          },
-        };
-      } catch (campaignsError) {
-        console.warn("Campaigns endpoint test failed:", campaignsError.message);
-        return {
-          success: true,
-          status: response.status,
-          message: "Basic connection successful, but campaigns endpoint failed",
-          campaignsEndpoint: {
-            success: false,
-            error: campaignsError.message,
-          },
-        };
-      }
-    } catch (error) {
-      console.error("API connection test failed:", error.message);
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  }
-
-  // Debug method to inspect API response structure
-  async debugApiResponse(endpoint, params = {}) {
-    try {
-      console.log(`Debugging API response for endpoint: ${endpoint}`);
-      console.log(`Parameters:`, params);
-
-      const response = await this.api.get(endpoint, { params });
-
-      const debugInfo = {
-        endpoint,
-        params,
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-        hasData: !!response.data,
-        dataType: typeof response.data,
-        dataKeys: response.data ? Object.keys(response.data) : [],
-        isArray: Array.isArray(response.data),
-        dataSize: response.data ? JSON.stringify(response.data).length : 0,
-        sampleData: response.data
-          ? JSON.stringify(response.data).substring(0, 1000) + "..."
-          : "null",
-      };
-
-      console.log("API Response Debug Info:", debugInfo);
-
-      return {
-        success: true,
-        debugInfo,
-        data: response.data,
-      };
-    } catch (error) {
-      console.error(`Debug API call failed for ${endpoint}:`, error.message);
-      return {
-        success: false,
-        error: error.message,
-        endpoint,
-        params,
-      };
-    }
-  }
-
-  // Test campaigns endpoint specifically
-  async testCampaignsEndpoint() {
-    try {
-      console.log("Testing campaigns endpoint specifically...");
-
-      const response = await this.api.get(
-        INSTANTLY_CONFIG.ENDPOINTS.CAMPAIGNS,
-        {
-          params: { page: 1, limit: 1 },
-        }
-      );
-
-      console.log("Campaigns endpoint response received");
-
-      const analysis = {
-        hasData: !!response.data,
-        dataType: typeof response.data,
-        dataKeys: response.data ? Object.keys(response.data) : [],
-        isArray: Array.isArray(response.data),
-        nestedData: {
-          hasDataData: response.data && !!response.data.data,
-          dataDataType:
-            response.data && response.data.data
-              ? typeof response.data.data
-              : "undefined",
-          dataDataIsArray:
-            response.data && response.data.data
-              ? Array.isArray(response.data.data)
-              : false,
-          dataDataLength:
-            response.data &&
-            response.data.data &&
-            Array.isArray(response.data.data)
-              ? response.data.data.length
-              : "N/A",
-        },
-        campaignsProperty: {
-          exists: response.data && !!response.data.campaigns,
-          type:
-            response.data && response.data.data
-              ? typeof response.data.campaigns
-              : "undefined",
-          isArray:
-            response.data && response.data.campaigns
-              ? Array.isArray(response.data.campaigns)
-              : false,
-          length:
-            response.data &&
-            response.data.campaigns &&
-            Array.isArray(response.data.campaigns)
-              ? response.data.campaigns.length
-              : "N/A",
-        },
-        resultsProperty: {
-          exists: response.data && !!response.data.results,
-          type:
-            response.data && response.data.results
-              ? typeof response.data.results
-              : "undefined",
-          isArray:
-            response.data && response.data.results
-              ? Array.isArray(response.data.results)
-              : false,
-          length:
-            response.data &&
-            response.data.results &&
-            Array.isArray(response.data.results)
-              ? response.data.results.length
-              : "N/A",
-        },
-      };
-
-      console.log("Campaigns endpoint analysis:", analysis);
-
-      return {
-        success: true,
-        analysis,
-        sampleData: response.data
-          ? JSON.stringify(response.data).substring(0, 800) + "..."
-          : "null",
-      };
-    } catch (error) {
-      console.error("Error testing campaigns endpoint:", error.message);
-      return {
-        success: false,
-        error: error.message,
-      };
     }
   }
 }

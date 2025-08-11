@@ -10,6 +10,9 @@ const INSTANTLY_CONFIG = {
     CAMPAIGN_DETAILS: "/campaigns/{id}",
     CAMPAIGN_METRICS: "/campaigns/{id}/metrics",
     CAMPAIGN_SUBSCRIBERS: "/campaigns/{id}/subscribers",
+    CAMPAIGN_LEADS: "/campaigns/{id}/leads",
+    CAMPAIGN_CONTACTS: "/campaigns/{id}/contacts",
+    LEAD_LIST: "/leads-lists",
   },
   RATE_LIMITS: {
     REQUESTS_PER_MINUTE: 60,

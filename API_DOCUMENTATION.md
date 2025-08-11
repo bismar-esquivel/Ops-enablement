@@ -147,35 +147,6 @@ GET /getCampaignById/{campaignId}
 }
 ```
 
-#### Obtener Métricas de Campaña
-
-```http
-GET /getCampaignMetrics/{campaignId}
-```
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "data": {
-    "campaign_id": "campaign_123",
-    "metrics": {
-      "sent": 1500,
-      "delivered": 1480,
-      "opened": 890,
-      "clicked": 120,
-      "bounced": 20,
-      "unsubscribed": 5,
-      "open_rate": 59.33,
-      "click_rate": 8.0,
-      "bounce_rate": 1.33
-    },
-    "period": "last_30_days"
-  }
-}
-```
-
 ### 3. Mantenimiento y Monitoreo
 
 #### Probar Conexión con Instantly API
@@ -223,6 +194,190 @@ GET /getSyncStats
       "lastSyncTime": "2024-01-20T15:30:00Z"
     },
     "syncHealth": "healthy"
+  }
+}
+```
+
+### 🎯 Gestión de Leads
+
+#### Sincronizar Leads de Campaña Específica
+
+```http
+POST /sync-campaign-leads/{campaignId}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Leads sincronizados exitosamente",
+  "data": {
+    "campaignId": "campaign_123",
+    "totalLeads": 150,
+    "syncedLeads": 150,
+    "errorCount": 0,
+    "success": true,
+    "message": "Lead synchronization completed. 150 leads synced."
+  }
+}
+```
+
+#### Sincronizar Leads de Todas las Campañas
+
+```http
+POST /sync-all-campaign-leads
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Sincronización de leads completada exitosamente",
+  "data": {
+    "totalCampaigns": 5,
+    "totalLeads": 750,
+    "totalSynced": 745,
+    "totalErrors": 5,
+    "campaignResults": [...],
+    "success": true,
+    "message": "Lead synchronization completed for 5 campaigns. 745 leads synced."
+  }
+}
+```
+
+#### Obtener Leads de Campaña
+
+```http
+GET /campaign-leads/{campaignId}?limit=50&page=1
+```
+
+**Query Parameters:**
+
+- `limit` (opcional): Número de leads por página (default: 100)
+- `page` (opcional): Número de página (default: 1)
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "lead_123",
+      "campaignId": "campaign_123",
+      "email": "john@example.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "fullName": "John Doe",
+      "company": "Example Corp",
+      "status": "new",
+      "source": "campaign",
+      "isSubscribed": true,
+      "emailOpened": 2,
+      "emailClicked": 1,
+      "createdAt": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 150
+  }
+}
+```
+
+#### Obtener Todos los Leads
+
+```http
+GET /leads?limit=50&page=1&status=new&campaignId=campaign_123&source=campaign
+```
+
+**Query Parameters:**
+
+- `limit` (opcional): Número de leads por página (default: 100)
+- `page` (opcional): Número de página (default: 1)
+- `status` (opcional): Filtrar por estado del lead
+- `campaignId` (opcional): Filtrar por campaña específica
+- `source` (opcional): Filtrar por fuente del lead
+
+#### Obtener Lead por ID
+
+```http
+GET /leads/{leadId}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "lead_123",
+    "campaignId": "campaign_123",
+    "email": "john@example.com",
+    "firstName": "John",
+    "lastName": "Doe",
+    "fullName": "John Doe",
+    "phone": "+1234567890",
+    "company": "Example Corp",
+    "jobTitle": "Marketing Manager",
+    "website": "example.com",
+    "location": "New York",
+    "status": "new",
+    "source": "campaign",
+    "score": 85,
+    "isSubscribed": true,
+    "emailSent": 5,
+    "emailOpened": 2,
+    "emailClicked": 1,
+    "customFields": {},
+    "tags": ["high-value", "engaged"],
+    "createdAt": "2024-01-15T10:30:00Z",
+    "updatedAt": "2024-01-15T10:30:00Z"
+  }
+}
+```
+
+#### Obtener Estadísticas de Leads
+
+```http
+GET /lead-stats?campaignId=campaign_123
+```
+
+**Query Parameters:**
+
+- `campaignId` (opcional): Filtrar estadísticas por campaña específica
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "total": 150,
+    "byStatus": {
+      "new": 50,
+      "qualified": 75,
+      "converted": 25
+    },
+    "bySource": {
+      "campaign": 100,
+      "website": 30,
+      "referral": 20
+    },
+    "byLocation": {
+      "New York": 45,
+      "Los Angeles": 35,
+      "Chicago": 30
+    },
+    "engagement": {
+      "subscribed": 140,
+      "unsubscribed": 10,
+      "opened": 120,
+      "clicked": 80
+    }
   }
 }
 ```
@@ -278,9 +433,14 @@ GET /hello
     "syncCampaignById",
     "getCampaigns",
     "getCampaignById",
-    "getCampaignMetrics",
     "testConnection",
-    "getSyncStats"
+    "getSyncStats",
+    "syncCampaignLeads",
+    "syncAllCampaignLeads",
+    "getCampaignLeads",
+    "getAllLeads",
+    "getLeadById",
+    "getLeadStats"
   ]
 }
 ```

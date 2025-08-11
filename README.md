@@ -169,7 +169,6 @@ npm start
 - **`GET /getCampaigns`** - Obtener todas las campañas con paginación
 - **`GET /getCampaigns?status=active&limit=50&page=1`** - Filtrar y paginar
 - **`GET /getCampaignById/{campaignId}`** - Obtener campaña específica
-- **`GET /getCampaignMetrics/{campaignId}`** - Obtener métricas en tiempo real
 
 #### 🛠️ Mantenimiento y Monitoreo
 
@@ -214,8 +213,7 @@ curl "https://your-project.cloudfunctions.net/getCampaigns?status=active&limit=2
 # Obtener campaña específica
 curl https://your-project.cloudfunctions.net/getCampaignById/campaign_123
 
-# Obtener métricas en tiempo real
-curl https://your-project.cloudfunctions.net/getCampaignMetrics/campaign_123
+
 ```
 
 #### Monitoreo
