@@ -1,529 +1,129 @@
-const axios = require("axios");
-const {
-  INSTANTLY_CONFIG,
-  validateConfig,
-  getHeaders,
-} = require("../config/instantly");
-const Campaign = require("../models/Campaign");
+const { INSTANTLY_CONFIG } = require("../config/instantly");
 const admin = require("../config/firebase");
+const {
+  CAMPAIGN_STATUS,
+  LEAD_STATUS,
+  LEAD_INTEREST_STATUS,
+  LEAD_VERIFICATION_STATUS,
+  LEAD_ENRICHMENT_STATUS,
+  LEAD_ESP_CODE,
+  dbCollection,
+} = require("../functions/constants");
 
-class InstantlyService {
-  constructor() {
-    validateConfig();
-    this.api = axios.create({
-      baseURL: INSTANTLY_CONFIG.BASE_URL,
-      headers: getHeaders(),
-      timeout: 30000,
+async function loadCampaigns({ campaigns = [], starting_after = "" }) {
+  console.log("LOAD CAMPAIGNS >>>", starting_after);
+  const query = new URLSearchParams({
+    limit: "100",
+    starting_after: starting_after,
+  }).toString();
+
+  const resp = await fetch(
+    `https://api.instantly.ai/api/v2/campaigns?${query}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${INSTANTLY_CONFIG.API_KEY}`,
+      },
+    }
+  );
+
+  const data = await resp.json();
+  const { items, next_starting_after } = data;
+  console.log("items >>>", items.length, " ----- ", next_starting_after);
+  const item = items[0];
+  console.log("item >>>", item);
+  const newCampaigns = [...campaigns, ...items];
+  console.log("newCampaigns >>>", newCampaigns.length);
+  if (next_starting_after) {
+    loadCampaigns({
+      campaigns: newCampaigns,
+      starting_after: next_starting_after,
     });
-
-    // Add request interceptor for rate limiting
-    this.api.interceptors.request.use(async (config) => {
-      await this.delay(INSTANTLY_CONFIG.RATE_LIMITS.DELAY_BETWEEN_REQUESTS);
-      return config;
-    });
-
-    // Add response interceptor for error handling
-    this.api.interceptors.response.use(
-      (response) => response,
-      async (error) => {
-        if (error.response?.status === 429) {
-          console.log("Rate limit exceeded, waiting before retry...");
-          await this.delay(5000);
-          return this.api.request(error.config);
-        }
-        return Promise.reject(error);
-      }
-    );
   }
-
-  // Utility method for delays
-  delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  // Retry mechanism for failed requests
-  async retryRequest(
-    requestFn,
-    maxAttempts = INSTANTLY_CONFIG.RETRY_CONFIG.MAX_ATTEMPTS
-  ) {
-    let lastError;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        return await requestFn();
-      } catch (error) {
-        lastError = error;
-        console.log(`Attempt ${attempt} failed:`, error.message);
-
-        if (attempt < maxAttempts) {
-          const delay =
-            INSTANTLY_CONFIG.RETRY_CONFIG.DELAY_BETWEEN_RETRIES * attempt;
-          console.log(`Waiting ${delay}ms before retry...`);
-          await this.delay(delay);
-        }
-      }
-    }
-
-    throw lastError;
-  }
-
-  // Get all campaigns with pagination support
-  async getAllCampaigns(page = 1, limit = 100) {
-    try {
-      console.log(`Fetching campaigns page ${page} with limit ${limit}`);
-
-      const response = await this.retryRequest(() =>
-        this.api.get(INSTANTLY_CONFIG.ENDPOINTS.CAMPAIGNS, {
-          params: {
-            page,
-            limit,
-            sort: "created_at",
-            order: "desc",
-          },
-        })
-      );
-
-      // Handle different possible response structures
-      let campaigns = [];
-      let pagination = {};
-
-      if (response.data) {
-        // Check if campaigns are nested in data.data
-        if (Array.isArray(response.data.data)) {
-          campaigns = response.data.data;
-          pagination = response.data.pagination || {};
-        }
-        // Check if campaigns are directly in data
-        else if (Array.isArray(response.data)) {
-          campaigns = response.data;
-        }
-        // Check if campaigns are in a different property
-        else if (
-          response.data.campaigns &&
-          Array.isArray(response.data.campaigns)
-        ) {
-          campaigns = response.data.campaigns;
-          pagination = response.data.pagination || {};
-        }
-        // Check if campaigns are in results property
-        else if (
-          response.data.results &&
-          Array.isArray(response.data.results)
-        ) {
-          campaigns = response.data.results;
-          pagination = response.data.pagination || {};
-        }
-        // If none of the above, log the structure for debugging
-        else {
-          console.warn("Unexpected API response structure:", {
-            hasData: !!response.data,
-            dataType: typeof response.data,
-            dataKeys: response.data ? Object.keys(response.data) : [],
-            isArray: Array.isArray(response.data),
-            sampleData: response.data
-              ? JSON.stringify(response.data).substring(0, 200) + "..."
-              : "null",
-          });
-
-          // Try to extract campaigns from any array property
-          for (const key in response.data) {
-            if (Array.isArray(response.data[key])) {
-              campaigns = response.data[key];
-              console.log(`Found campaigns in property: ${key}`);
-              break;
-            }
-          }
-        }
-      }
-
-      // Ensure campaigns is always an array
-      if (!Array.isArray(campaigns)) {
-        campaigns = [];
-        console.warn("No campaigns array found in response, using empty array");
-      }
-
-      console.log(`Retrieved ${campaigns.length} campaigns from API response`);
-
-      return {
-        campaigns,
-        pagination,
-        hasMore: pagination.next_page ? true : false,
-      };
-    } catch (error) {
-      console.error("Error fetching campaigns:", error.message);
-      throw error;
-    }
-  }
-
-  // Get all leads with pagination support
-  async getAllLeads(page = 1, limit = 100) {
-    try {
-      console.log(`Fetching leads page ${page} with limit ${limit}`);
-
-      const response = await this.retryRequest(() =>
-        this.api.get(INSTANTLY_CONFIG.ENDPOINTS.LEAD_LIST, {
-          params: {
-            page,
-            limit,
-            sort: "created_at",
-            order: "desc",
-          },
-        })
-      );
-
-      // Handle different possible response structures
-      let leads = [];
-      let pagination = {};
-
-      if (response.data) {
-        console.log("response.data >>>", response.data);
-        // Check if campaigns are nested in data.data
-        if (Array.isArray(response.data.data)) {
-          leads = response.data.data;
-          pagination = response.data.pagination || {};
-        }
-        // Check if campaigns are directly in data
-        else if (Array.isArray(response.data)) {
-          leads = response.data;
-        }
-        // Check if campaigns are in a different property
-        else if (response.data.leads && Array.isArray(response.data.leads)) {
-          leads = response.data.leads;
-          pagination = response.data.pagination || {};
-        }
-        // Check if campaigns are in results property
-        else if (
-          response.data.results &&
-          Array.isArray(response.data.results)
-        ) {
-          leads = response.data.results;
-          pagination = response.data.pagination || {};
-        }
-        // If none of the above, log the structure for debugging
-        else {
-          console.warn("Unexpected API response structure:", {
-            hasData: !!response.data,
-            dataType: typeof response.data,
-            dataKeys: response.data ? Object.keys(response.data) : [],
-            isArray: Array.isArray(response.data),
-            sampleData: response.data
-              ? JSON.stringify(response.data).substring(0, 200) + "..."
-              : "null",
-          });
-
-          // Try to extract campaigns from any array property
-          for (const key in response.data) {
-            if (Array.isArray(response.data[key])) {
-              leads = response.data[key];
-              console.log(`Found leads in property: ${key}`);
-              break;
-            }
-          }
-        }
-      }
-
-      // Ensure campaigns is always an array
-      if (!Array.isArray(leads)) {
-        leads = [];
-        console.warn("No leads array found in response, using empty array");
-      }
-
-      console.log(`Retrieved ${leads.length} leads from API response`);
-
-      return {
-        leads,
-        pagination,
-        hasMore: pagination.next_page ? true : false,
-      };
-    } catch (error) {
-      console.error("Error fetching leads:", error.message);
-      throw error;
-    }
-  }
-  // Get campaign details by ID
-  async getCampaignDetails(campaignId) {
-    try {
-      console.log(`Fetching details for campaign ${campaignId}`);
-
-      const endpoint = INSTANTLY_CONFIG.ENDPOINTS.CAMPAIGN_DETAILS.replace(
-        "{id}",
-        campaignId
-      );
-      const response = await this.retryRequest(() => this.api.get(endpoint));
-
-      console.log(
-        `Retrieved details for campaign ${campaignId} ---- ${response.data}`
-      );
-      return response.data;
-    } catch (error) {
-      console.error(
-        `Error fetching campaign ${campaignId} details:`,
-        error.message
-      );
-      throw error;
-    }
-  }
-
-  // Get campaign contacts by ID (alternative endpoint)
-  async getCampaignContacts(campaignId, page = 1, limit = 100) {
-    try {
-      console.log(`Fetching contacts for campaign ${campaignId}`);
-
-      const endpoint = INSTANTLY_CONFIG.ENDPOINTS.CAMPAIGN_CONTACTS.replace(
-        "{id}",
-        campaignId
-      );
-      const response = await this.retryRequest(() =>
-        this.api.get(endpoint, {
-          params: { page, limit },
-        })
-      );
-
-      console.log(`Retrieved contacts for campaign ${campaignId}`);
-      return response.data;
-    } catch (error) {
-      console.error(
-        `Error fetching campaign ${campaignId} contacts:`,
-        error.message
-      );
-      throw error;
-    }
-  }
-
-  // Sync all campaigns to Firestore
-  async syncAllCampaigns() {
-    try {
-      console.log("Starting full campaign synchronization...");
-      let page = 1;
-      let totalSynced = 0;
-      let hasMore = true;
-
-      while (hasMore) {
-        console.log(`Processing page ${page}...`);
-
-        let result;
-        try {
-          result = await this.getAllCampaigns(page, 100);
-          console.log(
-            "result >>>",
-            result.campaigns[0],
-            result.campaigns.length
-          );
-          console.log(`Page ${page} result:`, {
-            hasCampaigns: !!result.campaigns,
-            campaignsType: typeof result.campaigns,
-            isArray: Array.isArray(result.campaigns),
-            campaignsLength: result.campaigns
-              ? result.campaigns.length
-              : "undefined",
-            hasMore: result.hasMore,
-            pagination: result.pagination,
-          });
-        } catch (pageError) {
-          console.error(`Error fetching page ${page}:`, pageError.message);
-          throw new Error(`Failed to fetch page ${page}: ${pageError.message}`);
-        }
-
-        const campaigns = result.campaigns;
-
-        // Validate that we have campaigns to process
-        if (!campaigns || !Array.isArray(campaigns)) {
-          console.error("Invalid campaigns data received:", {
-            campaigns: campaigns,
-            result: result,
-            page: page,
-          });
-          throw new Error(
-            `Invalid campaigns data received from API on page ${page}`
-          );
-        }
-
-        if (campaigns.length === 0) {
-          console.log("No more campaigns to process");
-          break;
-        }
-
-        console.log("campaigns >>>", campaigns.length);
-        console.log("campaigns >>>", campaigns[0]);
-
-        // Process each campaign
-        const campaignsBatch = admin.firestore().batch();
-        for (const campaignData of campaigns) {
-          try {
-            // Get additional details if available
-            let fullCampaignData = campaignData;
-
-            const CAMPAIGN_STATUS = {
-              1: "Active",
-              2: "Paused",
-              3: "Completed",
-              4: "Running Subsequences",
-              "-99": "Account Suspended",
-              "-1": "Accounts Unhealthy",
-              "-2": "Bounce Protect",
-            };
-
-            try {
-              // const details = await this.getCampaignDetails(campaignData.id);
-              // fullCampaignData = {
-              //   ...campaignData,
-              //   ...details,
-              // };
-            } catch (detailError) {
-              console.warn(
-                `Could not fetch full details for campaign ${campaignData.id}:`,
-                detailError.message
-              );
-            }
-
-            // Create and save campaign
-            const campaign = new Campaign(fullCampaignData);
-            campaignsBatch.set(
-              admin.firestore().collection("campaigns").doc(campaign.id),
-              {
-                ...campaign,
-                status: CAMPAIGN_STATUS[campaignData.status],
-              }
-            );
-            totalSynced++;
-
-            console.log(`Synced campaign: ${campaign.name} (${campaign.id})`);
-          } catch (campaignError) {
-            console.error(
-              `Error syncing campaign ${campaignData.id}:`,
-              campaignError.message
-            );
-          }
-        }
-        await campaignsBatch.commit();
-
-        hasMore = result.hasMore;
-        page++;
-
-        // Add delay between pages to respect rate limits
-        if (hasMore) {
-          await this.delay(2000);
-        }
-      }
-
-      console.log(
-        `Campaign synchronization completed. Total synced: ${totalSynced}`
-      );
-      return { totalSynced, success: true };
-    } catch (error) {
-      console.error("Error during campaign synchronization:", error.message);
-      throw error;
-    }
-  }
-
-  // Sync all leads to Firestore
-  async syncAllLeads() {
-    try {
-      console.log("Starting full lead synchronization...");
-      let page = 1;
-      let totalSynced = 0;
-      let hasMore = true;
-
-      while (hasMore) {
-        console.log(`Processing page ${page}...`);
-
-        let result;
-        try {
-          result = await this.getAllLeads(page, 100);
-          console.log("result >>>", result.leads[0], result.leads.length);
-        } catch (pageError) {
-          console.error(`Error fetching page ${page}:`, pageError.message);
-          throw new Error(`Failed to fetch page ${page}: ${pageError.message}`);
-        }
-
-        const leads = result.leads;
-
-        // Validate that we have campaigns to process
-        if (!leads || !Array.isArray(leads)) {
-          console.error("Invalid leads data received:", {
-            leads: leads,
-            result: result,
-            page: page,
-          });
-          throw new Error(
-            `Invalid campaigns data received from API on page ${page}`
-          );
-        }
-
-        if (leads.length === 0) {
-          console.log("No more leads to process");
-          break;
-        }
-
-        console.log("leads >>>", leads.length);
-        console.log("leads >>>", leads[0]);
-
-        // Process each lead
-        const leadsBatch = admin.firestore().batch();
-        for (const leadData of leads) {
-          try {
-            // Get additional details if available
-            let fullLeadData = leadData;
-
-            const CAMPAIGN_STATUS = {
-              1: "Active",
-              2: "Paused",
-              3: "Completed",
-              4: "Running Subsequences",
-              "-99": "Account Suspended",
-              "-1": "Accounts Unhealthy",
-              "-2": "Bounce Protect",
-            };
-
-            try {
-              // const details = await this.getCampaignDetails(campaignData.id);
-              // fullCampaignData = {
-              //   ...campaignData,
-              //   ...details,
-              // };
-            } catch (detailError) {
-              console.warn(
-                `Could not fetch full details for lead ${leadData.id}:`,
-                detailError.message
-              );
-            }
-
-            // Create and save campaign
-            const lead = new Lead(fullLeadData);
-            leadsBatch.set(admin.firestore().collection("leads").doc(lead.id), {
-              ...lead,
-              status: LEAD_STATUS[leadData.status],
-            });
-            totalSynced++;
-
-            console.log(`Synced lead: ${lead.email} (${lead.id})`);
-          } catch (leadError) {
-            console.error(
-              `Error syncing lead ${leadData.id}:`,
-              leadError.message
-            );
-          }
-        }
-        await leadsBatch.commit();
-
-        hasMore = result.hasMore;
-        page++;
-
-        // Add delay between pages to respect rate limits
-        if (hasMore) {
-          await this.delay(2000);
-        }
-      }
-
-      console.log(
-        `Lead synchronization completed. Total synced: ${totalSynced}`
-      );
-      return { totalSynced, success: true };
-    } catch (error) {
-      console.error("Error during lead synchronization:", error.message);
-      throw error;
-    }
-  }
+  return newCampaigns;
 }
+module.exports.loadCampaigns = loadCampaigns;
 
-module.exports = InstantlyService;
+async function saveCampaigns({ campaigns = [] }) {
+  const campaignsToSave = campaigns.map((campaign) => {
+    return {
+      ...campaign,
+      status: CAMPAIGN_STATUS[campaign.status],
+    };
+  });
+  const db = admin.firestore();
+  const batch = db.batch();
+  campaignsToSave.forEach((campaign) => {
+    const campaignRef = db.collection(dbCollection.campaigns).doc(campaign.id);
+    batch.set(campaignRef, campaign);
+  });
+  await batch.commit();
+}
+module.exports.saveCampaigns = saveCampaigns;
+
+async function loadLeads({ leads = [], starting_after = "" }) {
+  const resp = await fetch(`https://api.instantly.ai/api/v2/leads/list`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${INSTANTLY_CONFIG.API_KEY}`,
+    },
+    body: JSON.stringify({
+      limit: 100,
+      starting_after: starting_after,
+    }),
+  });
+
+  const data = await resp.json();
+  const { items, next_starting_after } = data;
+  console.log("items >>>", items.length, " ----- ", next_starting_after);
+  const newLeads = [...leads, ...items];
+  console.log("newLeads >>>", newLeads.length);
+  if (next_starting_after) {
+    return loadLeads({
+      leads: newLeads,
+      starting_after: next_starting_after,
+    });
+  }
+  return newLeads;
+}
+module.exports.loadLeads = loadLeads;
+
+async function saveLeads({ leads = [] }) {
+  const leadsToSave = leads.map((lead) => {
+    return {
+      ...lead,
+      status: LEAD_STATUS[lead.status] || "",
+      lt_interest_status: LEAD_INTEREST_STATUS[lead.lt_interest_status] || "",
+      verification_status:
+        LEAD_VERIFICATION_STATUS[lead.verification_status] || "",
+      enrichment_status: LEAD_ENRICHMENT_STATUS[lead.enrichment_status] || "",
+      esp_code: LEAD_ESP_CODE[lead.esp_code] || "",
+    };
+  });
+  console.log("total leads >>>", leadsToSave.length);
+  console.log("leads >>>", leadsToSave[0]);
+  // create an array of 500 leads
+  const leadsBatchesOf500 = leadsToSave.reduce((acc, lead, index) => {
+    const batchIndex = Math.floor(index / 500);
+    if (!acc[batchIndex]) {
+      acc[batchIndex] = [];
+    }
+    acc[batchIndex].push(lead);
+    return acc;
+  }, []);
+  console.log("leadsBatchesOf500 >>>", leadsBatchesOf500.length);
+  for (const batch of leadsBatchesOf500) {
+    const leadsBatch = admin.firestore().batch();
+    batch.forEach((lead) => {
+      const leadRef = admin
+        .firestore()
+        .collection(dbCollection.leads)
+        .doc(lead.id);
+      leadsBatch.set(leadRef, lead);
+    });
+    await leadsBatch.commit();
+  }
+  console.log("leads saved to firestore");
+}
+module.exports.saveLeads = saveLeads;
