@@ -17,10 +17,6 @@ setGlobalOptions({
 // FUNCIONES HTTP PARA SINCRONIZACIÓN MANUAL
 // ============================================================================
 
-/**
- * Sincronizar todas las campañas de Instantly
- * Endpoint: POST /sync-campaigns
- */
 exports.syncAllCampaigns = onRequest(
   {
     cors: true,

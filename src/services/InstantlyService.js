@@ -10,6 +10,25 @@ const {
   dbCollection,
 } = require("../functions/constants");
 
+async function loadCampaignAnalytics({ campaign }) {
+  const query = new URLSearchParams({
+    id: campaign.id,
+  }).toString();
+
+  const resp = await fetch(
+    `https://api.instantly.ai/api/v2/campaigns/analytics?${query}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${INSTANTLY_CONFIG.API_KEY}`,
+      },
+    }
+  );
+
+  const data = await resp.json();
+  return data;
+}
+
 async function loadCampaigns({ campaigns = [], starting_after = "" }) {
   console.log("LOAD CAMPAIGNS >>>", starting_after);
   const query = new URLSearchParams({
@@ -40,7 +59,22 @@ async function loadCampaigns({ campaigns = [], starting_after = "" }) {
       starting_after: next_starting_after,
     });
   }
-  return newCampaigns;
+
+  const newCampaignsWithAnalytics = await Promise.all(
+    newCampaigns.map(async (campaign) => {
+      const analytics = await loadCampaignAnalytics({ campaign });
+      console.log("analytics >>>", analytics);
+      return {
+        ...campaign,
+        ...analytics[0],
+      };
+    })
+  );
+  console.log(
+    "newCampaignsWithAnalytics >>>",
+    newCampaignsWithAnalytics.length
+  );
+  return newCampaignsWithAnalytics;
 }
 module.exports.loadCampaigns = loadCampaigns;
 
